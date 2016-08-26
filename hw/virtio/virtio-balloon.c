@@ -30,6 +30,8 @@
 #include "hw/virtio/virtio-bus.h"
 #include "hw/virtio/virtio-access.h"
 
+#include <stdio.h>
+
 #define BALLOON_PAGE_SIZE  (1 << VIRTIO_BALLOON_PFN_SHIFT)
 
 static void balloon_page(void *addr, int deflate)
@@ -68,7 +70,18 @@ static inline void reset_stats(VirtIOBalloon *dev)
     int i;
     for (i = 0; i < VIRTIO_BALLOON_S_NR; dev->stats[i++] = -1);
 }
+/*
+static bool balloon_stats_prog_supported(const VirtIOBalloon *s)
+{
+    VirtIODevice *vdev = VIRTIO_DEVICE(s);
+    return virtio_vdev_has_feature(vdev, VIRTIO_BALLOON_F_STATS_PROG);
+}
 
+static bool balloon_stats_prog_enabled(const VirtIOBalloon *s)
+{
+    return s->stats_prog_size > 0;
+}
+*/
 static bool balloon_stats_supported(const VirtIOBalloon *s)
 {
     VirtIODevice *vdev = VIRTIO_DEVICE(s);
@@ -309,7 +322,9 @@ static void virtio_balloon_get_config(VirtIODevice *vdev, uint8_t *config_data)
 
     config.num_pages = cpu_to_le32(dev->num_pages);
     config.actual = cpu_to_le32(dev->actual);
+    config.stats_prog_size = cpu_to_le32(dev->stats_prog_size);
 
+    printf("num_pages = %d, actual = %d\n", config.num_pages, config.actual);
     trace_virtio_balloon_get_config(config.num_pages, config.actual);
     memcpy(config_data, &config, sizeof(struct virtio_balloon_config));
 }
@@ -357,6 +372,7 @@ static void virtio_balloon_set_config(VirtIODevice *vdev,
 
     memcpy(&config, config_data, sizeof(struct virtio_balloon_config));
     dev->actual = le32_to_cpu(config.actual);
+    dev->stats_prog_size = le32_to_cpu(config.stats_prog_size);
     if (dev->actual != oldactual) {
         qapi_event_send_balloon_change(vm_ram_size -
                         ((ram_addr_t) dev->actual << VIRTIO_BALLOON_PFN_SHIFT),
@@ -487,6 +503,9 @@ VMSTATE_VIRTIO_DEVICE(balloon, 1, virtio_balloon_load, virtio_vmstate_save);
 static Property virtio_balloon_properties[] = {
     DEFINE_PROP_BIT("deflate-on-oom", VirtIOBalloon, host_features,
                     VIRTIO_BALLOON_F_DEFLATE_ON_OOM, false),
+    DEFINE_PROP_BIT("stats-prog", VirtIOBalloon, host_features,
+                    VIRTIO_BALLOON_F_STATS_PROG, false),
+    DEFINE_PROP_UINT32("stats-prog-size", VirtIOBalloon, stats_prog_size, 0), 
     DEFINE_PROP_END_OF_LIST(),
 };
 
