@@ -79,7 +79,7 @@ static bool balloon_stats_prog_supported(const VirtIOBalloon *s)
 
 static bool balloon_stats_prog_enabled(const VirtIOBalloon *s)
 {
-    return s->stats_prog_size > 0;
+    return s->stats_prog_len > 0;
 }
 */
 static bool balloon_stats_supported(const VirtIOBalloon *s)
@@ -322,9 +322,11 @@ static void virtio_balloon_get_config(VirtIODevice *vdev, uint8_t *config_data)
 
     config.num_pages = cpu_to_le32(dev->num_pages);
     config.actual = cpu_to_le32(dev->actual);
-    config.stats_prog_size = cpu_to_le32(dev->stats_prog_size);
-
-    printf("num_pages = %d, actual = %d\n", config.num_pages, config.actual);
+    config.stats_prog_len = cpu_to_le32(dev->stats_prog_len);
+    config.stats_prog_pfn = cpu_to_le32(dev->stats_prog_pfn);
+    printf("num_pages = %d, actual = %d, stats_prog_len = %d, stats_prog_pfn = %x\n", 
+            config.num_pages, config.actual, config.stats_prog_len, config.stats_prog_pfn);
+    
     trace_virtio_balloon_get_config(config.num_pages, config.actual);
     memcpy(config_data, &config, sizeof(struct virtio_balloon_config));
 }
@@ -371,13 +373,16 @@ static void virtio_balloon_set_config(VirtIODevice *vdev,
     ram_addr_t vm_ram_size = get_current_ram_size();
 
     memcpy(&config, config_data, sizeof(struct virtio_balloon_config));
+    printf("set: num_pages = %d, actual = %d, stats_prog_len = %d, stats_prog_pfn = %x\n", 
+            config.num_pages, config.actual, config.stats_prog_len, config.stats_prog_pfn);
     dev->actual = le32_to_cpu(config.actual);
-    dev->stats_prog_size = le32_to_cpu(config.stats_prog_size);
+    dev->stats_prog_pfn = le32_to_cpu(config.stats_prog_pfn);
     if (dev->actual != oldactual) {
         qapi_event_send_balloon_change(vm_ram_size -
                         ((ram_addr_t) dev->actual << VIRTIO_BALLOON_PFN_SHIFT),
                         &error_abort);
     }
+    
     trace_virtio_balloon_set_config(dev->actual, oldactual);
 }
 
@@ -408,6 +413,7 @@ static void virtio_balloon_to_target(void *opaque, ram_addr_t target)
     }
     if (target) {
         dev->num_pages = (vm_ram_size - target) >> VIRTIO_BALLOON_PFN_SHIFT;
+        printf("{notify}\n");
         virtio_notify_config(vdev);
     }
     trace_virtio_balloon_to_target(target, dev->num_pages);
@@ -419,6 +425,7 @@ static void virtio_balloon_save_device(VirtIODevice *vdev, QEMUFile *f)
 
     qemu_put_be32(f, s->num_pages);
     qemu_put_be32(f, s->actual);
+    qemu_put_be32(f, s->stats_prog_len);
 }
 
 static int virtio_balloon_load(QEMUFile *f, void *opaque, size_t size)
@@ -433,6 +440,7 @@ static int virtio_balloon_load_device(VirtIODevice *vdev, QEMUFile *f,
 
     s->num_pages = qemu_get_be32(f);
     s->actual = qemu_get_be32(f);
+    s->stats_prog_len = qemu_get_be32(f);
 
     if (balloon_stats_enabled(s)) {
         balloon_stats_change_timer(s, s->stats_poll_interval);
@@ -505,7 +513,7 @@ static Property virtio_balloon_properties[] = {
                     VIRTIO_BALLOON_F_DEFLATE_ON_OOM, false),
     DEFINE_PROP_BIT("stats-prog", VirtIOBalloon, host_features,
                     VIRTIO_BALLOON_F_STATS_PROG, false),
-    DEFINE_PROP_UINT32("stats-prog-size", VirtIOBalloon, stats_prog_size, 0), 
+    DEFINE_PROP_UINT32("stats-prog-len", VirtIOBalloon, stats_prog_len, 0), 
     DEFINE_PROP_END_OF_LIST(),
 };
 
