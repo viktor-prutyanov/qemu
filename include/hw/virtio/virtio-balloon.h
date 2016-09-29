@@ -43,8 +43,9 @@ typedef struct VirtIOBalloon {
     int64_t stats_last_update;
     int64_t stats_poll_interval;
     uint32_t host_features;
-    uint32_t stats_prog_len;
+    uint32_t stats_prog_size;
     uint32_t stats_prog_pfn;
+    uint8_t stats_prog_uploaded;
 } VirtIOBalloon;
 
 #endif

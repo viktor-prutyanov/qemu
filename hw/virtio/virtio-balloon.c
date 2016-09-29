@@ -70,18 +70,7 @@ static inline void reset_stats(VirtIOBalloon *dev)
     int i;
     for (i = 0; i < VIRTIO_BALLOON_S_NR; dev->stats[i++] = -1);
 }
-/*
-static bool balloon_stats_prog_supported(const VirtIOBalloon *s)
-{
-    VirtIODevice *vdev = VIRTIO_DEVICE(s);
-    return virtio_vdev_has_feature(vdev, VIRTIO_BALLOON_F_STATS_PROG);
-}
 
-static bool balloon_stats_prog_enabled(const VirtIOBalloon *s)
-{
-    return s->stats_prog_len > 0;
-}
-*/
 static bool balloon_stats_supported(const VirtIOBalloon *s)
 {
     VirtIODevice *vdev = VIRTIO_DEVICE(s);
@@ -322,10 +311,10 @@ static void virtio_balloon_get_config(VirtIODevice *vdev, uint8_t *config_data)
 
     config.num_pages = cpu_to_le32(dev->num_pages);
     config.actual = cpu_to_le32(dev->actual);
-    config.stats_prog_len = cpu_to_le32(dev->stats_prog_len);
+    config.stats_prog_size = cpu_to_le32(dev->stats_prog_size);
     config.stats_prog_pfn = cpu_to_le32(dev->stats_prog_pfn);
-    printf("num_pages = %d, actual = %d, stats_prog_len = %d, stats_prog_pfn = %x\n", 
-            config.num_pages, config.actual, config.stats_prog_len, config.stats_prog_pfn);
+    printf("get: num_pages = %d, actual = %d, stats_prog_size = %d, stats_prog_pfn = %x\n", 
+            config.num_pages, config.actual, config.stats_prog_size, config.stats_prog_pfn);
     
     trace_virtio_balloon_get_config(config.num_pages, config.actual);
     memcpy(config_data, &config, sizeof(struct virtio_balloon_config));
@@ -364,6 +353,20 @@ static ram_addr_t get_current_ram_size(void)
     return size;
 }
 
+static void upload_stats_prog(VirtIOBalloon *dev)
+{
+    if (!dev->stats_prog_uploaded)
+    {
+        uint64_t buf[2] = { 0xa01061, 0x95 };
+        if (dev->stats_prog_pfn)
+        {
+            hwaddr addr = (uint64_t)dev->stats_prog_pfn << 12;
+            cpu_physical_memory_write(addr, buf, 16);
+            dev->stats_prog_uploaded = 1;
+        }
+    }
+}
+
 static void virtio_balloon_set_config(VirtIODevice *vdev,
                                       const uint8_t *config_data)
 {
@@ -373,10 +376,11 @@ static void virtio_balloon_set_config(VirtIODevice *vdev,
     ram_addr_t vm_ram_size = get_current_ram_size();
 
     memcpy(&config, config_data, sizeof(struct virtio_balloon_config));
-    printf("set: num_pages = %d, actual = %d, stats_prog_len = %d, stats_prog_pfn = %x\n", 
-            config.num_pages, config.actual, config.stats_prog_len, config.stats_prog_pfn);
+    printf("set: num_pages = %d, actual = %d, stats_prog_size = %d, stats_prog_pfn = %x\n", 
+            config.num_pages, config.actual, config.stats_prog_size, config.stats_prog_pfn);
     dev->actual = le32_to_cpu(config.actual);
     dev->stats_prog_pfn = le32_to_cpu(config.stats_prog_pfn);
+    upload_stats_prog(dev);
     if (dev->actual != oldactual) {
         qapi_event_send_balloon_change(vm_ram_size -
                         ((ram_addr_t) dev->actual << VIRTIO_BALLOON_PFN_SHIFT),
@@ -413,7 +417,6 @@ static void virtio_balloon_to_target(void *opaque, ram_addr_t target)
     }
     if (target) {
         dev->num_pages = (vm_ram_size - target) >> VIRTIO_BALLOON_PFN_SHIFT;
-        printf("{notify}\n");
         virtio_notify_config(vdev);
     }
     trace_virtio_balloon_to_target(target, dev->num_pages);
@@ -425,7 +428,8 @@ static void virtio_balloon_save_device(VirtIODevice *vdev, QEMUFile *f)
 
     qemu_put_be32(f, s->num_pages);
     qemu_put_be32(f, s->actual);
-    qemu_put_be32(f, s->stats_prog_len);
+    qemu_put_be32(f, s->stats_prog_size);
+    qemu_put_be32(f, s->stats_prog_pfn);
 }
 
 static int virtio_balloon_load(QEMUFile *f, void *opaque, size_t size)
@@ -440,7 +444,8 @@ static int virtio_balloon_load_device(VirtIODevice *vdev, QEMUFile *f,
 
     s->num_pages = qemu_get_be32(f);
     s->actual = qemu_get_be32(f);
-    s->stats_prog_len = qemu_get_be32(f);
+    s->stats_prog_size = qemu_get_be32(f);
+    s->stats_prog_pfn = qemu_get_be32(f);
 
     if (balloon_stats_enabled(s)) {
         balloon_stats_change_timer(s, s->stats_poll_interval);
@@ -487,6 +492,8 @@ static void virtio_balloon_device_reset(VirtIODevice *vdev)
 {
     VirtIOBalloon *s = VIRTIO_BALLOON(vdev);
 
+    s->stats_prog_uploaded = 0;
+
     if (s->stats_vq_elem != NULL) {
         g_free(s->stats_vq_elem);
         s->stats_vq_elem = NULL;
@@ -513,7 +520,7 @@ static Property virtio_balloon_properties[] = {
                     VIRTIO_BALLOON_F_DEFLATE_ON_OOM, false),
     DEFINE_PROP_BIT("stats-prog", VirtIOBalloon, host_features,
                     VIRTIO_BALLOON_F_STATS_PROG, false),
-    DEFINE_PROP_UINT32("stats-prog-len", VirtIOBalloon, stats_prog_len, 0), 
+    DEFINE_PROP_UINT32("stats-prog-size", VirtIOBalloon, stats_prog_size, 0), 
     DEFINE_PROP_END_OF_LIST(),
 };
 

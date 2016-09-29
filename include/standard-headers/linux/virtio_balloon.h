@@ -44,8 +44,8 @@ struct virtio_balloon_config {
 	uint32_t num_pages;
 	/* Number of pages we've actually got in balloon. */
 	uint32_t actual;
-	/* Length of BPF statistics program. */
-	uint32_t stats_prog_len;
+	/* Size of BPF statistics program. */
+	uint32_t stats_prog_size;
 	/* PFN of BPF statistics program. */
 	uint32_t stats_prog_pfn;
 };
