@@ -60,6 +60,8 @@ struct virtio_balloon_config {
 #define VIRTIO_BALLOON_S_BPF_RET  7   /* BPF program return code */
 #define VIRTIO_BALLOON_S_NR       8
 
+#define VIRTIO_BALLOON_S_ANON_NR  8   /* Amount of anonymous stats */
+
 /*
  * Memory statistics structure.
  * Driver fills an array of these structures and passes to device.

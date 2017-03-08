@@ -68,7 +68,7 @@ static const char *balloon_stat_names[] = {
 static inline void reset_stats(VirtIOBalloon *dev)
 {
     int i;
-    for (i = 0; i < VIRTIO_BALLOON_S_NR; dev->stats[i++] = -1);
+    for (i = 0; i < VIRTIO_BALLOON_S_NR + VIRTIO_BALLOON_S_ANON_NR; dev->stats[i++] = -1);
 }
 
 static bool balloon_stats_supported(const VirtIOBalloon *s)
@@ -136,6 +136,14 @@ static void balloon_stats_get_all(Object *obj, Visitor *v, const char *name,
     }
     for (i = 0; i < VIRTIO_BALLOON_S_NR; i++) {
         visit_type_uint64(v, balloon_stat_names[i], &s->stats[i], &err);
+        if (err) {
+            goto out_nested;
+        }
+    }
+    char anon_stat_pattern[] = "anon-stat-0";
+    for (i = 0; i < VIRTIO_BALLOON_S_ANON_NR; i++) {
+        sprintf(anon_stat_pattern + 10, "%d", i);
+        visit_type_uint64(v, anon_stat_pattern, &s->stats[VIRTIO_BALLOON_S_NR + i], &err);
         if (err) {
             goto out_nested;
         }
@@ -286,7 +294,7 @@ static void virtio_balloon_receive_stats(VirtIODevice *vdev, VirtQueue *vq)
         uint64_t val = virtio_tswap64(vdev, stat.val);
 
         offset += sizeof(stat);
-        if (tag < VIRTIO_BALLOON_S_NR)
+        if (tag < VIRTIO_BALLOON_S_NR + VIRTIO_BALLOON_S_ANON_NR)
             s->stats[tag] = val;
     }
     s->stats_vq_offset = offset;
@@ -313,7 +321,7 @@ static void virtio_balloon_get_config(VirtIODevice *vdev, uint8_t *config_data)
     config.actual = cpu_to_le32(dev->actual);
     config.stats_prog_size = cpu_to_le32(dev->stats_prog_size);
     config.stats_prog_pfn = cpu_to_le32(dev->stats_prog_pfn);
-    printf("get: num_pages = %d, actual = %d, stats_prog_size = %d, stats_prog_pfn = %x\n", 
+    fprintf(stderr, "get: num_pages = %d, actual = %d, stats_prog_size = %d, stats_prog_pfn = %x\n", 
             config.num_pages, config.actual, config.stats_prog_size, config.stats_prog_pfn);
     
     trace_virtio_balloon_get_config(config.num_pages, config.actual);
