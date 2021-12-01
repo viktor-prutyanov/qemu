@@ -1551,7 +1551,7 @@ static void unref_inode(struct lo_data *lo, struct lo_inode *inode, uint64_t n)
         return;
     }
 
-    assert(inode->nlookup >= n);
+    n = (n > inode->nlookup) ? inode->nlookup : n;
     inode->nlookup -= n;
     if (!inode->nlookup) {
         lo_map_remove(&lo->ino_map, inode->fuse_ino);
