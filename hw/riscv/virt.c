@@ -86,6 +86,7 @@ static const MemMapEntry virt_memmap[] = {
     [VIRT_APLIC_S] =      {  0xd000000, APLIC_SIZE(VIRT_CPUS_MAX) },
     [VIRT_UART0] =        { 0x10000000,         0x100 },
     [VIRT_VIRTIO] =       { 0x10001000,        0x1000 },
+    [VIRT_MMIO]   =       { 0x10010000,        0x1000 },
     [VIRT_FW_CFG] =       { 0x10100000,          0x18 },
     [VIRT_FLASH] =        { 0x20000000,     0x4000000 },
     [VIRT_IMSIC_M] =      { 0x24000000, VIRT_IMSIC_MAX_SIZE },
@@ -839,6 +840,24 @@ static void create_fdt_virtio(RISCVVirtState *s, const MemMapEntry *memmap,
     }
 }
 
+static void create_fdt_mmio_stub(RISCVVirtState *s, const MemMapEntry *memmap,
+        uint32_t irq_virtio_phandle)
+{
+    char *name;
+    MachineState *ms = MACHINE(s);
+
+    name = g_strdup_printf("/soc/mmio_stub@%lx", (long)memmap[VIRT_MMIO].base);
+    qemu_fdt_add_subnode(ms->fdt, name);
+    qemu_fdt_setprop_string(ms->fdt, name, "compatible", "virtio,mmio");
+    qemu_fdt_setprop_cells(ms->fdt, name, "reg",
+            0x0, memmap[VIRT_MMIO].base,
+            0x0, memmap[VIRT_MMIO].size);
+    qemu_fdt_setprop_cell(ms->fdt, name, "interrupt-parent",
+            irq_virtio_phandle);
+    qemu_fdt_setprop_cell(ms->fdt, name, "interrupts", VIRTIO_IRQ + VIRTIO_COUNT);
+    g_free(name);
+}
+
 static void create_fdt_pcie(RISCVVirtState *s, const MemMapEntry *memmap,
                             uint32_t irq_pcie_phandle,
                             uint32_t msi_pcie_phandle)
@@ -1031,6 +1050,8 @@ static void create_fdt(RISCVVirtState *s, const MemMapEntry *memmap)
                        &msi_pcie_phandle);
 
     create_fdt_virtio(s, memmap, irq_virtio_phandle);
+
+    create_fdt_mmio_stub(s, memmap, irq_virtio_phandle);
 
     create_fdt_pcie(s, memmap, irq_pcie_phandle, msi_pcie_phandle);
 
@@ -1469,6 +1490,10 @@ static void virt_machine_init(MachineState *machine)
             qdev_get_gpio_in(DEVICE(virtio_irqchip), VIRTIO_IRQ + i));
     }
 
+    /* MMIO Stub device */
+    sysbus_create_simple("mmio-stub", memmap[VIRT_MMIO].base,
+            qdev_get_gpio_in(DEVICE(virtio_irqchip), VIRTIO_IRQ + VIRTIO_COUNT));
+
     gpex_pcie_init(system_memory,
                    memmap[VIRT_PCIE_ECAM].base,
                    memmap[VIRT_PCIE_ECAM].size,
@@ -1635,6 +1660,7 @@ static void virt_machine_class_init(ObjectClass *oc, void *data)
 
     hc->plug = virt_machine_device_plug_cb;
 
+    machine_class_allow_dynamic_sysbus_dev(mc, "mmio-stub");
     machine_class_allow_dynamic_sysbus_dev(mc, TYPE_RAMFB_DEVICE);
 #ifdef CONFIG_TPM
     machine_class_allow_dynamic_sysbus_dev(mc, TYPE_TPM_TIS_SYSBUS);
